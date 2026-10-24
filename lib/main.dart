@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'services/firebase_service.dart';
 
 void main() {
   runApp(const KidsStationApp());
@@ -14,7 +15,7 @@ class KidsStationApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'كيدز ستاشن | Kids Station Egypt',
+      title: 'كيدز ستيشن مصر | Kids Station Egypt',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar', 'EG'),
       supportedLocales: const [Locale('ar', 'EG'), Locale('en', 'US')],
@@ -32,169 +33,371 @@ class KidsStationApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       ),
-      home: const KidsStationHomeScreen(),
+      home: const MainNavigationScreen(),
     );
   }
 }
 
-class KidsStationHomeScreen extends StatefulWidget {
-  const KidsStationHomeScreen({super.key});
+class MainNavigationScreen extends StatefulWidget {
+  const MainNavigationScreen({super.key});
 
   @override
-  State<KidsStationHomeScreen> createState() => _KidsStationHomeScreenState();
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _KidsStationHomeScreenState extends State<KidsStationHomeScreen> {
-  int _tab = 0;
-  int _points = 450;
-  String _selectedBranch = 'فرع القاهرة الجديدة (التسعين الشمالي)';
-  String _selectedPkg = 'ساعتين لعب (440 ج.م)';
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _currentIndex = 0;
+  final KidsStationFirebaseService _firebaseService = KidsStationFirebaseService();
 
-  final List<Map<String, dynamic>> _branches = [
-    {'name': 'فرع القاهرة الجديدة (التسعين الشمالي)', 'area': 'التجمع الخامس', 'price': 240, 'status': 'هادئ الآن 🟢', 'phone': '01000455777'},
-    {'name': 'فرع الشيخ زايد (أمريكانا بلازا)', 'area': 'الشيخ زايد', 'price': 240, 'status': 'متوسط 🟡', 'phone': '01115020502'},
-    {'name': 'فرع الشيخ زايد (ذا هب مول سوديك)', 'area': 'الشيخ زايد', 'price': 210, 'status': 'هادئ الآن 🟢', 'phone': '01115020502'},
-    {'name': 'فرع مدينة نصر (توكانو كومبليكس)', 'area': 'مدينة نصر', 'price': 240, 'status': 'نشط الآن 🟠', 'phone': '01103273001'},
-    {'name': 'فرع المعادي (زهراء المعادي)', 'area': 'المعادي', 'price': 240, 'status': 'هادئ الآن 🟢', 'phone': '01115020502'},
-    {'name': 'فرع مدينتي (Madinaty)', 'area': 'مدينتي', 'price': 240, 'status': 'متوسط 🟡', 'phone': '01115020502'},
-    {'name': 'فرع مدينة الرحاب', 'area': 'الرحاب', 'price': 240, 'status': 'هادئ الآن 🟢', 'phone': '01115020502'},
-    {'name': 'فرع مدينة العبور', 'area': 'العبور', 'price': 240, 'status': 'هادئ الآن 🟢', 'phone': '01115020502'},
+  List<Map<String, dynamic>> _branches = [
+    {
+      'id': 'cairo_festival',
+      'name': 'فرع كايرو فيستيفال سيتي - التجمع الخامسة',
+      'city': 'القاهرة والتجمع',
+      'crowdStatus': 'green',
+      'crowdLabel': '🟢 هادئ',
+      'prices': {'hour1': 250, 'hour2': 400, 'hour5': 800, 'birthday': 1500}
+    },
+    {
+      'id': 'mall_of_arabia',
+      'name': 'فرع مول العرب - 6 أكتوبر',
+      'city': 'الجيزة وأكتوبر',
+      'crowdStatus': 'yellow',
+      'crowdLabel': '🟡 متوسط',
+      'prices': {'hour1': 220, 'hour2': 380, 'hour5': 750, 'birthday': 1400}
+    },
+    {
+      'id': 'city_stars',
+      'name': 'فرع سيتي ستارز - مدينة نصر',
+      'city': 'القاهرة والتجمع',
+      'crowdStatus': 'orange',
+      'crowdLabel': '🟠 نشط',
+      'prices': {'hour1': 240, 'hour2': 390, 'hour5': 780, 'birthday': 1450}
+    },
   ];
 
-  final List<Map<String, String>> _tickets = [
-    {'id': 'KS-88412', 'branch': 'فرع القاهرة الجديدة (التسعين الشمالي)', 'pkg': 'ساعتين لعب (440 ج.م)', 'child': 'آدم (6 سنوات)', 'wb': 'WB-204', 'pin': '4829'},
-  ];
+  String _selectedBranchId = 'cairo_festival';
+  String _ticketType = 'hour2';
+  int _childCount = 1;
+
+  final TextEditingController _branchNameController = TextEditingController();
+  final TextEditingController _branchCityController = TextEditingController();
+  final TextEditingController _price1HourController = TextEditingController(text: '250');
+  final TextEditingController _price2HoursController = TextEditingController(text: '400');
+  final TextEditingController _price5HoursController = TextEditingController(text: '800');
+  final TextEditingController _priceBirthdayController = TextEditingController(text: '1500');
+
+  Map<String, dynamic> get _selectedBranch {
+    return _branches.firstWhere(
+      (b) => b['id'] == _selectedBranchId,
+      orElse: () => _branches.first,
+    );
+  }
+
+  int get _calculatedTotalPrice {
+    final prices = Map<String, dynamic>.from(_selectedBranch['prices'] ?? {});
+    final basePrice = (prices[_ticketType] as num?)?.toInt() ?? 250;
+    return basePrice * _childCount;
+  }
+
+  void _updateBranchCrowd(String branchId, String crowdStatus, String crowdLabel) {
+    setState(() {
+      final index = _branches.indexWhere((b) => b['id'] == branchId);
+      if (index != -1) {
+        _branches[index]['crowdStatus'] = crowdStatus;
+        _branches[index]['crowdLabel'] = crowdLabel;
+      }
+    });
+    _firebaseService.updateBranchCrowdStatus(branchId, crowdStatus, crowdLabel);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم تحديث حالة الازدحام إلى $crowdLabel')),
+    );
+  }
+
+  void _saveBranchPrices() {
+    final p1 = int.tryParse(_price1HourController.text) ?? 250;
+    final p2 = int.tryParse(_price2HoursController.text) ?? 400;
+    final p5 = int.tryParse(_price5HoursController.text) ?? 800;
+    final pb = int.tryParse(_priceBirthdayController.text) ?? 1500;
+
+    setState(() {
+      final index = _branches.indexWhere((b) => b['id'] == _selectedBranchId);
+      if (index != -1) {
+        _branches[index]['prices'] = {
+          'hour1': p1,
+          'hour2': p2,
+          'hour5': p5,
+          'birthday': pb,
+        };
+      }
+    });
+
+    _firebaseService.updateBranchPrices(
+      branchId: _selectedBranchId,
+      price1Hour: p1,
+      price2Hours: p2,
+      price5Hours: p5,
+      priceBirthday: pb,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حفظ أسعار التذاكر الجديدة بنجاح في Firestore!')),
+    );
+  }
+
+  void _addNewBranch() {
+    final name = _branchNameController.text.trim();
+    final city = _branchCityController.text.trim();
+    if (name.isEmpty || city.isEmpty) return;
+
+    final id = 'branch_${DateTime.now().millisecondsSinceEpoch}';
+    final newBranch = {
+      'id': id,
+      'name': name,
+      'city': city,
+      'crowdStatus': 'green',
+      'crowdLabel': '🟢 هادئ',
+      'prices': {'hour1': 250, 'hour2': 400, 'hour5': 800, 'birthday': 1500},
+    };
+
+    setState(() {
+      _branches.add(newBranch);
+      _selectedBranchId = id;
+      _branchNameController.clear();
+      _branchCityController.clear();
+    });
+
+    _firebaseService.addNewBranch(newBranch);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم إضافة الفرع الجديد "$name" بنجاح!')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final views = [_buildBranches(), _buildBooking(), _buildTickets(), _buildGateAdmin()];
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4C1D95),
+        title: const Text('💡 كيدز ستيشن - التطبيق الموحد'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
-        title: const Text('كيدز ستاشن مصر | Kids Station', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Center(child: Text('⭐ $_points نقطة', style: const TextStyle(color: Color(0xFFFCD34D), fontWeight: FontWeight.bold))),
-          ),
+      ),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          _buildBookingCalculatorTab(),
+          _buildGateAdminTab(),
         ],
       ),
-      body: views[_tab],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.location_on), label: 'دليل الفروع'),
-          NavigationDestination(icon: Icon(Icons.confirmation_number), label: 'حجز تذكرة'),
-          NavigationDestination(icon: Icon(Icons.qr_code_2), label: 'تذاكري'),
-          NavigationDestination(icon: Icon(Icons.qr_code_scanner), label: 'بوابة الفرع'),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (i) => setState(() => _currentIndex = i),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calculate),
+            label: 'حاسبة الحجز',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.admin_panel_settings),
+            label: '🛂 بوابة الفرع',
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildBranches() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(14),
-      itemCount: _branches.length,
-      itemBuilder: (ctx, i) {
-        final b = _branches[i];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 10),
-          child: ListTile(
-            title: Text(b['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${b['area']} • ${b['status']} • يبدأ من ${b['price']} ج.م'),
-            trailing: FilledButton(
-              onPressed: () => setState(() {
-                _selectedBranch = b['name'];
-                _tab = 1;
-              }),
-              child: const Text('احجز الآن'),
+  Widget _buildBookingCalculatorTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('اختر الفرع الحجم والمدينة:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          DropdownButton<String>(
+            value: _selectedBranchId,
+            isExpanded: true,
+            items: _branches.map((b) {
+              return DropdownMenuItem<String>(
+                value: b['id'],
+                child: Text('${b['name']} (${b['crowdLabel']})'),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedBranchId = val);
+            },
+          ),
+          const SizedBox(height: 16),
+          const Text('اختر نوع التذكرة:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          RadioListTile<String>(
+            title: Text('ساعة واحدة (${_selectedBranch['prices']['hour1']} ج.م)'),
+            value: 'hour1',
+            groupValue: _ticketType,
+            onChanged: (v) => setState(() => _ticketType = v!),
+          ),
+          RadioListTile<String>(
+            title: Text('ساعتين (${_selectedBranch['prices']['hour2']} ج.م)'),
+            value: 'hour2',
+            groupValue: _ticketType,
+            onChanged: (v) => setState(() => _ticketType = v!),
+          ),
+          RadioListTile<String>(
+            title: Text('5 ساعات (${_selectedBranch['prices']['hour5']} ج.م)'),
+            value: 'hour5',
+            groupValue: _ticketType,
+            onChanged: (v) => setState(() => _ticketType = v!),
+          ),
+          RadioListTile<String>(
+            title: Text('باقة عيد ميلاد (${_selectedBranch['prices']['birthday']} ج.م)'),
+            value: 'birthday',
+            groupValue: _ticketType,
+            onChanged: (v) => setState(() => _ticketType = v!),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text('عدد الأطفال: ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: _childCount > 1 ? () => setState(() => _childCount--) : null,
+              ),
+              Text('$_childCount', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () => setState(() => _childCount++),
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.purple.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.purple.shade200),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('الإجمالي الحسابي:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('$_calculatedTotalPrice ج.م', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9))),
+              ],
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
-  Widget _buildBooking() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text('الحجز الإلكتروني الفوري 🎟️', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _selectedBranch,
-          items: _branches.map((b) => DropdownMenuItem<String>(value: b['name'], child: Text(b['name']))).toList(),
-          onChanged: (v) => setState(() => _selectedBranch = v!),
-          decoration: const InputDecoration(labelText: 'اختر الفرع', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _selectedPkg,
-          items: const [
-            DropdownMenuItem(value: 'ساعة لعب (240 ج.م)', child: Text('ساعة لعب (240 ج.م)')),
-            DropdownMenuItem(value: 'ساعتين لعب (440 ج.م)', child: Text('ساعتين لعب (440 ج.م)')),
-            DropdownMenuItem(value: 'باقة 5 ساعات VIP (650 ج.م)', child: Text('باقة 5 ساعات VIP (650 ج.م)')),
-          ],
-          onChanged: (v) => setState(() => _selectedPkg = v!),
-          decoration: const InputDecoration(labelText: 'اختر الباقة', border: OutlineInputBorder()),
-        ),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: () {
-            final id = 'KS-${10000 + Random().nextInt(89999)}';
-            final wb = 'WB-${200 + Random().nextInt(700)}';
-            final pin = '${1000 + Random().nextInt(8999)}';
-            setState(() {
-              _tickets.insert(0, {'id': id, 'branch': _selectedBranch, 'pkg': _selectedPkg, 'child': 'آدم وفريدة', 'wb': wb, 'pin': pin});
-              _points += 45;
-              _tab = 2;
-            });
-          },
-          icon: const Icon(Icons.check_circle),
-          label: const Text('تأكيد الحجز وإصدار تذكرة الـ QR'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTickets() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(14),
-      itemCount: _tickets.length,
-      itemBuilder: (ctx, i) {
-        final t = _tickets[i];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            leading: const Icon(Icons.qr_code_2, size: 42, color: Color(0xFF6D28D9)),
-            title: Text('${t['id']} • ${t['branch']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${t['pkg']} • أسورة: ${t['wb']} • كود الاستلام: ${t['pin']}'),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildGateAdmin() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text('لوحة تحكم بوابة الفرع وربط Firebase 🛂🔥', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        const Text('الأطفال المتواجدون داخل الفرع والأساور الذكية:'),
-        const SizedBox(height: 10),
-        ..._tickets.map((t) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.watch, color: Colors.teal),
-                title: Text('أسورة ${t['wb']} • ${t['child']}'),
-                subtitle: Text('تذكرة ${t['id']} • كود أمان الاستلام: ${t['pin']}'),
-                trailing: const Chip(label: Text('نشط بالداخل 🟢')),
+  Widget _buildGateAdminTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('🛂 بوابة الفرع ولوحة التحكم اللحظي', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('التحكم اللحظي في حالة ازدحام الفروع:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  DropdownButton<String>(
+                    value: _selectedBranchId,
+                    isExpanded: true,
+                    items: _branches.map((b) {
+                      return DropdownMenuItem<String>(
+                        value: b['id'],
+                        child: Text(b['name']),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedBranchId = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                        onPressed: () => _updateBranchCrowd(_selectedBranchId, 'green', '🟢 هادئ'),
+                        child: const Text('🟢 هادئ'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                        onPressed: () => _updateBranchCrowd(_selectedBranchId, 'yellow', '🟡 متوسط'),
+                        child: const Text('🟡 متوسط'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                        onPressed: () => _updateBranchCrowd(_selectedBranchId, 'orange', '🟠 نشط'),
+                        child: const Text('🟠 نشط'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            )),
-      ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('⚙️ قسم إعدادات نظام التشغيل لتعديل الأسعار:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  TextField(controller: _price1HourController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'سعر تذكرة ساعة (ج.م)')),
+                  TextField(controller: _price2HoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'سعر تذكرة ساعتين (ج.م)')),
+                  TextField(controller: _price5HoursController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'سعر تذكرة 5 ساعات (ج.م)')),
+                  TextField(controller: _priceBirthdayController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'سعر باقة عيد ميلاد (ج.م)')),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveBranchPrices,
+                      icon: const Icon(Icons.save),
+                      label: const Text('حفظ تحديث الأسعار في Firestore'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('➕ إضافة فرع جديد مباشرة:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  TextField(controller: _branchNameController, decoration: const InputDecoration(labelText: 'اسم الفرع الجديد')),
+                  TextField(controller: _branchCityController, decoration: const InputDecoration(labelText: 'المدينة / المنطقة')),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _addNewBranch,
+                      icon: const Icon(Icons.add_location_alt),
+                      label: const Text('إضافة الفرع وتحديث القائمة و Firestore'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
