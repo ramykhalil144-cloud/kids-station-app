@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions for 8 RBAC Roles
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getUserRole() {
+      return getUserData().role;
+    }
+    
+    function getUserBranch() {
+      return getUserData().branch_id;
+    }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && (getUserRole() == '1. Super Admin' || getUserRole() == 'Super Admin');
+    }
+    
+    function isOperationsAdmin() {
+      return isSignedIn() && (getUserRole() == '2. Operations Admin' || getUserRole() == 'Operations Admin');
+    }
+    
+    function isBranchManager() {
+      return isSignedIn() && (getUserRole() == '3. Branch Manager' || getUserRole() == 'Branch Manager');
+    }
+    
+    function isReceptionist() {
+      return isSignedIn() && (getUserRole() == '4. Receptionist' || getUserRole() == 'Receptionist');
+    }
+    
+    function isHallSupervisor() {
+      return isSignedIn() && (getUserRole() == '5. Hall Supervisor' || getUserRole() == 'Hall Supervisor');
+    }
+    
+    function isSecurityOfficer() {
+      return isSignedIn() && (getUserRole() == '6. Security Officer' || getUserRole() == 'Security Officer');
+    }
+    
+    function isAccountant() {
+      return isSignedIn() && (getUserRole() == '7. Accountant' || getUserRole() == 'Accountant');
+    }
+    
+    function isCustomerSupport() {
+      return isSignedIn() && (getUserRole() == '8. Customer Support' || getUserRole() == 'Customer Support');
+    }
+
+    function isGlobalAdmin() {
+      return isSuperAdmin() || isOperationsAdmin();
+    }
+    
+    function isBranchMember(branchId) {
+      return isGlobalAdmin() || (isSignedIn() && getUserBranch() == branchId);
+    }
+
+    // Default rule
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Branch Isolation
+    match /branches/{branchId} {
+      allow read: if isSignedIn() && isBranchMember(branchId);
+      allow write: if isGlobalAdmin() || (isBranchManager() && isBranchMember(branchId));
+    }
+
+    // Visit Photos Protection
+    match /visit_photos/{photoId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && (isGlobalAdmin() || isBranchManager() || isReceptionist() || isSecurityOfficer());
+      allow delete: if isGlobalAdmin();
+    }
+
+    // Smart Bracelets Lifecycle
+    match /bracelets/{braceletId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && (isGlobalAdmin() || isBranchManager() || isReceptionist() || isHallSupervisor());
+      allow delete: if isGlobalAdmin();
+    }
+
+    // Confidential Management Suggestions Box
+    match /management_suggestions/{suggestionId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isSuperAdmin() || isOperationsAdmin();
+    }
+
+    // Immutable Audit Log
+    match /audit/{auditId} {
+      allow read: if isSignedIn() && (isGlobalAdmin() || isBranchManager() || isAccountant());
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable audit log
+    }
+
+    // Visits Collection
+    match /visits/{visitId} {
+      allow read: if isSignedIn() && isBranchMember(resource.data.branch_id);
+      allow create, update: if isSignedIn();
+      allow delete: if isGlobalAdmin();
+    }
+  }
+}
