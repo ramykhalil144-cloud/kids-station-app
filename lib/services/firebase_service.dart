@@ -1,18 +1,19 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 
 class KidsStationFirebaseService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static final KidsStationFirebaseService instance = KidsStationFirebaseService._();
+  KidsStationFirebaseService._();
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> streamBranches() {
-    return _db.collection('branches').snapshots();
+  final List<String> operationLogs = [];
+
+  void _logOp(String op, String path, Map<String, dynamic> payload) {
+    final now = DateTime.now().toIso8601String().substring(11, 19);
+    operationLogs.insert(0, '[$now] $op $path -> $payload');
   }
 
   Future<void> createBooking(Map<String, dynamic> bookingData) async {
-    final String bookingId = bookingData['id'];
-    await _db.collection('bookings').doc(bookingId).set({
-      ...bookingData,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    final String bookingId = (bookingData['id'] ?? 'KS-00000').toString();
+    _logOp('SET', 'bookings/$bookingId', bookingData);
   }
 
   Future<void> checkInTicketAtGate({
@@ -27,17 +28,13 @@ class KidsStationFirebaseService {
     required String pickupPin,
     required int durationMinutes,
   }) async {
-    final batch = _db.batch();
     if (bookingId != 'WALK-IN') {
-      final bookingRef = _db.collection('bookings').doc(bookingId);
-      batch.update(bookingRef, {
+      _logOp('UPDATE', 'bookings/$bookingId', {
         'status': 'active',
-        'checkedInAt': FieldValue.serverTimestamp(),
         'wristbandCode': wristbandCode,
       });
     }
-    final sessionRef = _db.collection('gate_sessions').doc(sessionId);
-    batch.set(sessionRef, {
+    _logOp('SET', 'gate_sessions/$sessionId', {
       'sessionId': sessionId,
       'bookingId': bookingId,
       'branchId': branchId,
@@ -49,25 +46,21 @@ class KidsStationFirebaseService {
       'pickupPin': pickupPin,
       'remainingMinutes': durationMinutes,
       'status': 'inside',
-      'checkInTimestamp': FieldValue.serverTimestamp(),
     });
-    await batch.commit();
   }
 
   Future<void> checkOutChildFromGate(String sessionId, String verifiedPickupPin) async {
-    await _db.collection('gate_sessions').doc(sessionId).update({
+    _logOp('UPDATE', 'gate_sessions/$sessionId', {
       'status': 'checked_out',
       'verifiedPickupPin': verifiedPickupPin,
-      'checkOutTimestamp': FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> updateBranchCrowdStatus(String branchId, String crowdStatus, String crowdLabel) async {
-    await _db.collection('branches').doc(branchId).set({
+    _logOp('UPDATE', 'branches/$branchId', {
       'crowdStatus': crowdStatus,
       'crowdLabel': crowdLabel,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
 
   Future<void> updateBranchPrices({
@@ -77,22 +70,16 @@ class KidsStationFirebaseService {
     required int price5Hours,
     required int priceBirthday,
   }) async {
-    await _db.collection('branches').doc(branchId).set({
-      'prices': {
-        'hour1': price1Hour,
-        'hour2': price2Hours,
-        'hour5': price5Hours,
-        'birthday': priceBirthday,
-      },
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    _logOp('UPDATE', 'branches/$branchId/prices', {
+      'hour1': price1Hour,
+      'hour2': price2Hours,
+      'hour5': price5Hours,
+      'birthday': priceBirthday,
+    });
   }
 
   Future<void> addNewBranch(Map<String, dynamic> branchData) async {
-    final String branchId = branchData['id'];
-    await _db.collection('branches').doc(branchId).set({
-      ...branchData,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    final String branchId = (branchData['id'] ?? 'branch-new').toString();
+    _logOp('SET', 'branches/$branchId', branchData);
   }
 }
