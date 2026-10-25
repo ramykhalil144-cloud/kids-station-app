@@ -4,6 +4,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/firebase_service.dart';
+/*
+============================================================================
+KIDS STATION - FAMILY PROFILE & BOOKING CONFIGURATION
+1. Quick Navigation (8 Sections):
+   1. Home, 2. Register/My Family, 3. Book a Visit, 4. Branches, 5. Payment & Discounts, 6. My Bookings, 7. Family Profile, 8. Support
+2. New Customer Registration Workflow (4 Steps):
+   Step 1: +20 OTP | Step 2: Father & Mother Data | Step 3: Auto Child 1..N Forms | Step 4: Review
+   Automatic returning customer account retrieval active.
+3. Booking Time & Discounts Center:
+   From: 04:00 PM -> To: 06:00 PM | Discount Code: KIDS15
+============================================================================
+*/
+
+Widget buildKidsStationProfileBookingCard() {
+  return const Card(
+    margin: EdgeInsets.all(16.0),
+    child: Padding(
+      padding: EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Quick Navigation (8 Sections):', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text('1. Home, 2. Register/My Family, 3. Book a Visit, 4. Branches, 5. Payment & Discounts, 6. My Bookings, 7. Family Profile, 8. Support'),
+          SizedBox(height: 12),
+          Text('New Customer Registration Workflow (4 Steps):', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text('Step 1: +20 OTP | Step 2: Father & Mother Data | Step 3: Auto Child 1..N Forms Generation | Step 4: Review'),
+          Text('Automatic returning customer account retrieval enabled.'),
+          SizedBox(height: 12),
+          Text('Booking Time & Payment Center:', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text('Time: From: 04:00 PM -> To: 06:00 PM | Discount Code: KIDS15'),
+        ],
+      ),
+    ),
+  );
+}
+
 
 void main() {
   runApp(const KidsStationApp());
